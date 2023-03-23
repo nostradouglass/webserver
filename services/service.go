@@ -5,12 +5,18 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"webserver/models"
 
+	"github.com/gorilla/mux"
 	"github.com/jmoiron/sqlx"
 )
 
 var dbconn *sqlx.DB
+
+func SetDB(db *sqlx.DB) {
+	dbconn = db
+}
 
 func GetAllPosts(w http.ResponseWriter, r *http.Request) {
 
@@ -21,7 +27,7 @@ func GetAllPosts(w http.ResponseWriter, r *http.Request) {
 	sqlStmt := `SELECT * FROM posts`
 	rows, err := dbconn.Queryx(sqlStmt)
 
-	if err != nil {
+	if err == nil {
 		var tempPost = models.GetPost()
 
 		for rows.Next() {
@@ -48,6 +54,79 @@ func GetAllPosts(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func SetDB(db *sqlx.DB) {
-	dbconn = db
+func CreatePost(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var post = models.GetPost()
+	var id int
+	_ = json.NewDecoder(r.Body).Decode(&post)
+
+	log.Println(post)
+
+	sqlStmt := `INSERT INTO posts(title, body, ID) VALUES($1, $2, $3) RETURNING id`
+	err := dbconn.QueryRow(sqlStmt, post.Title, post.Body, post.ID).Scan(&id)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	post.ID = id
+	log.Println("New record id is:", id)
+	json.NewEncoder(w).Encode(&post)
+}
+
+func GetPost(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	params := mux.Vars(r)
+	id, _ := strconv.Atoi(params["id"])
+
+	var searchpost = models.GetPost()
+
+	sqlStmt := `SELECT * FROM posts WHERE id=$1`
+	row := dbconn.QueryRowx(sqlStmt, id)
+	switch err := row.StructScan(&searchpost); err {
+	case sql.ErrNoRows:
+		{
+			log.Println("No Rows returned")
+			http.Error(w, err.Error(), 204)
+		}
+	case nil:
+		json.NewEncoder(w).Encode(&searchpost)
+	default:
+		http.Error(w, err.Error(), 400)
+		return
+	}
+}
+
+func UpdatePost(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	params := mux.Vars(r)
+
+	var post = models.GetPost()
+
+	_ = json.NewDecoder(r.Body).Decode(&post)
+	post.ID, _ = strconv.Atoi(params["id"])
+
+	id := 0
+
+	sqlStmt := `UPDATE posts SET title=$1, body=$2 WHERE id=$3 RETURNING id`
+	err := dbconn.QueryRow(sqlStmt, post.Title, post.Body, params["id"]).Scan(&id)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	log.Println("Updated record ID is:", id)
+	json.NewEncoder(w).Encode(&post)
+}
+
+func DeletePost(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	params := mux.Vars(r)
+	id := 0
+	sqlStmt := `DELETE FROM posts WHERE id=$1 RETURNING id`
+	err := dbconn.QueryRow(sqlStmt, params["id"]).Scan(&id)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	log.Println("Deleted record ID is:", id)
+	json.NewEncoder(w).Encode(id)
 }

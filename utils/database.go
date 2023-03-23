@@ -11,7 +11,7 @@ import (
 const (
 	host     = "localhost"
 	port     = 5432
-	user     = "username"
+	user     = "postgres"
 	password = "password"
 	dbname   = "godb"
 )
